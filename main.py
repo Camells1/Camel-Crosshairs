@@ -46,10 +46,18 @@ def main():
     def exit_app():
         command_queue.put(("exit",))
 
+    def toggle_follow():
+        command_queue.put(("toggle_follow",))
+
+    def get_follow_state():
+        return settings.get("follow_cursor", True)
+
     tray = TrayIcon(
         on_toggle=toggle_crosshair,
         on_show_settings=show_settings,
         on_exit=exit_app,
+        on_toggle_follow=toggle_follow,
+        get_follow_state=get_follow_state,
     )
     tray.start()
 
@@ -67,6 +75,11 @@ def main():
                 if cmd[0] == "toggle":
                     overlay.toggle()
                     settings_win.visible_var.set(settings.get("visible", True))
+                    config.save_settings(settings)
+                elif cmd[0] == "toggle_follow":
+                    settings["follow_cursor"] = not settings.get("follow_cursor", True)
+                    overlay.refresh()
+                    settings_win.follow_cursor_var.set(settings["follow_cursor"])
                     config.save_settings(settings)
                 elif cmd[0] == "show_settings":
                     settings_win.show()

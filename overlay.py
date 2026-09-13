@@ -1,5 +1,7 @@
+import ctypes
 import os
 import tkinter as tk
+from ctypes import wintypes
 
 import win32api
 import win32con
@@ -10,6 +12,33 @@ import cursor_hide
 from crosshair_draw import draw_crosshair
 
 KEY_COLOR = "#010203"  # chroma-key color treated as fully transparent
+
+_CURSOR_SHOWING = 0x00000001
+
+
+class _CURSORINFO(ctypes.Structure):
+    _fields_ = [
+        ("cbSize", wintypes.DWORD),
+        ("flags", wintypes.DWORD),
+        ("hCursor", wintypes.HANDLE),
+        ("ptScreenPos", wintypes.POINT),
+    ]
+
+
+def _os_cursor_is_shown():
+    """Whether the OS considers the cursor currently visible (the ShowCursor
+    show/hide counter), independent of what bitmap it's using. Games
+    typically hide this during camera-look play and show it again for
+    mouse-driven UI like an inventory screen — the same flag screen-recording
+    software checks to decide whether to draw a cursor overlay."""
+    try:
+        ci = _CURSORINFO()
+        ci.cbSize = ctypes.sizeof(_CURSORINFO)
+        if not ctypes.windll.user32.GetCursorInfo(ctypes.byref(ci)):
+            return True
+        return bool(ci.flags & _CURSOR_SHOWING)
+    except Exception:
+        return True
 
 _LOG_PATH = os.path.join(
     os.environ.get("APPDATA", os.path.expanduser("~")), "CrosshairOverlay", "debug.log"
@@ -53,6 +82,9 @@ class Overlay:
         self._tk_image = None
         self.hwnd = None
         self._tracking = False
+        self._screen_w = win32api.GetSystemMetrics(0)
+        self._screen_h = win32api.GetSystemMetrics(1)
+        self._screen_center = (self._screen_w // 2, self._screen_h // 2)
 
         self.win.after(50, self._make_click_through)
         # Started independently of _make_click_through so a failure there
@@ -119,6 +151,20 @@ class Overlay:
         self._tracking = True
         self._track_loop()
 
+    def _foreground_is_fullscreen(self):
+        """True when the focused window covers the whole monitor — the
+        standard, widely-used signal ("is a game running") that taskbar
+        auto-hide and every game-bar/overlay tool relies on. Just a focus +
+        size check; nothing about the cursor is inspected here."""
+        try:
+            fg = win32gui.GetForegroundWindow()
+            if not fg or fg == self.hwnd:
+                return False
+            l, t, r, b = win32gui.GetWindowRect(fg)
+            return (r - l) >= self._screen_w - 2 and (b - t) >= self._screen_h - 2
+        except Exception:
+            return False
+
     def _track_loop(self):
         try:
             follow = self.settings.get("follow_cursor", True)
@@ -126,7 +172,17 @@ class Overlay:
             if visible and self.hwnd:
                 half = self.size // 2
                 if follow:
-                    x, y = win32api.GetCursorPos()
+                    if self._foreground_is_fullscreen() and not _os_cursor_is_shown():
+                        # A fullscreen game is focused AND it has hidden the
+                        # OS cursor — the camera-look state, where games
+                        # handle cursor position too inconsistently (frozen,
+                        # drifting, recentered) to track reliably. Pin center.
+                        x, y = self._screen_center
+                    else:
+                        # Desktop, or a fullscreen game showing the cursor
+                        # again for mouse-driven UI (e.g. an inventory
+                        # screen) — follow it like normal.
+                        x, y = win32api.GetCursorPos()
                     px, py = x - half, y - half
                 else:
                     px, py = None, None

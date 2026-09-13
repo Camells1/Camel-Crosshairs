@@ -29,13 +29,18 @@ def make_icon_image():
 
 
 class TrayIcon:
-    def __init__(self, on_toggle, on_show_settings, on_exit):
+    def __init__(self, on_toggle, on_show_settings, on_exit, on_toggle_follow, get_follow_state):
         self.icon = pystray.Icon(
             "CamelCrosshairs",
             make_icon_image(),
             "Camel Crosshairs",
             menu=pystray.Menu(
                 pystray.MenuItem("Show / Hide Crosshair", lambda: on_toggle()),
+                pystray.MenuItem(
+                    "Follow Mouse Cursor",
+                    lambda: on_toggle_follow(),
+                    checked=lambda item: get_follow_state(),
+                ),
                 pystray.MenuItem("Open Settings", lambda: on_show_settings()),
                 pystray.MenuItem("Quit", lambda: on_exit()),
             ),
